@@ -182,11 +182,4 @@ Observações:
 - **CSS-106 ajustável** via slider no drawer do CONE (já é MV — pronto para isso).
 - **PI mais refinado** com anti-windup correto e bumpless transfer.
 
----
 
-## 8. Regras observadas
-
-- Sem bibliotecas pesadas extras (apenas `three`).
-- Sem assets externos obrigatórios.
-- Vite + TS `strict: true`, sem `any`.
-- UI 100% vanilla DOM, sem frameworks.
