@@ -1,0 +1,241 @@
+/* ----------- Tema SCADA dark ----------- */
+:root {
+  --bg-0: #0b0f14;
+  --bg-1: #111821;
+  --bg-2: #182230;
+  --bg-3: #1f2b3c;
+  --line: #2a3a52;
+  --text: #e4ecf7;
+  --text-dim: #8ea0bc;
+  --accent: #3ea6ff;
+  --ok: #2ecc71;
+  --warn: #f1c40f;
+  --alarm: #ff5252;
+  --stop: #7f8c8d;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app {
+  height: 100%;
+  margin: 0;
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+#app {
+  display: grid;
+  grid-template-rows: 48px 1fr;
+}
+
+/* ----------- Topbar ----------- */
+#topbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  background: linear-gradient(180deg, #16202d 0%, #0e1620 100%);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 2px 0 rgba(0,0,0,0.2);
+}
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand-dot {
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--accent); box-shadow: 0 0 10px var(--accent);
+}
+.brand .subtitle { color: var(--text-dim); margin-left: 8px; }
+#sim-controls { margin-left: auto; display: flex; gap: 8px; }
+#sim-clock {
+  font-family: "Consolas", ui-monospace, monospace;
+  color: var(--text-dim);
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+  margin-left: 12px;
+}
+
+.btn {
+  background: var(--bg-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn:hover { background: var(--bg-3); border-color: var(--accent); }
+.btn-ok { background: #1c3b2a; border-color: #2ecc71; }
+.btn-ok:hover { background: #25513a; }
+.btn-danger { background: #3b1c1c; border-color: var(--alarm); color: #ffd9d9; }
+.btn-danger:hover { background: #5a2424; }
+
+/* ----------- Main layout ----------- */
+#main {
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  min-height: 0;
+}
+
+#viewport-wrap { position: relative; min-width: 0; }
+#viewport { position: absolute; inset: 0; }
+
+#hint {
+  position: absolute;
+  bottom: 10px; left: 10px;
+  background: rgba(0,0,0,0.45);
+  color: var(--text-dim);
+  padding: 6px 10px;
+  font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  pointer-events: none;
+}
+
+/* ----------- Sidepanel ----------- */
+#sidepanel {
+  background: var(--bg-1);
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.panel {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+.panel h3 {
+  margin: 0 0 8px 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+}
+
+/* ----------- Equipment status list ----------- */
+.equip-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  padding: 6px 4px;
+  border-bottom: 1px dashed var(--line);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.equip-row:last-child { border-bottom: none; }
+.equip-row:hover { background: var(--bg-3); border-radius: 6px; }
+.equip-row .name {
+  font-weight: 600;
+}
+.badge {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: bold;
+}
+.badge.RUN { background: rgba(46,204,113,0.15); color: var(--ok); border: 1px solid rgba(46,204,113,0.4); }
+.badge.STOP { background: rgba(127,140,141,0.15); color: var(--stop); border: 1px solid rgba(127,140,141,0.4); }
+.badge.ALARM { background: rgba(255,82,82,0.15); color: var(--alarm); border: 1px solid rgba(255,82,82,0.5); animation: blink 1s steps(2, end) infinite; }
+
+@keyframes blink { 50% { opacity: 0.55; } }
+
+/* ----------- Tag grid ----------- */
+#tag-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.tag-card {
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.tag-card .id {
+  font-family: "Consolas", monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.tag-card .val {
+  font-family: "Consolas", monospace;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.tag-card .unit {
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: 4px;
+}
+.tag-card.MV { border-left: 3px solid var(--accent); }
+.tag-card.PV { border-left: 3px solid var(--ok); }
+.tag-card.high { border-left-color: var(--alarm); }
+
+/* ----------- Alarms ----------- */
+#alarm-list {
+  margin: 0; padding: 0; list-style: none;
+  max-height: 160px; overflow-y: auto;
+}
+#alarm-list li {
+  padding: 5px 6px;
+  border-bottom: 1px dashed var(--line);
+  font-size: 11px;
+}
+#alarm-list li.alarm {
+  color: var(--alarm);
+  font-weight: 600;
+}
+#alarm-list li.muted { color: var(--text-dim); font-style: italic; }
+
+/* ----------- Drawer ----------- */
+.drawer {
+  position: fixed;
+  top: 56px;
+  right: 376px;
+  width: 320px;
+  max-height: calc(100vh - 72px);
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  z-index: 10;
+}
+.drawer.hidden { display: none; }
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--bg-2);
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+}
+.drawer-header h3 { margin: 0; font-size: 13px; }
+#drawer-body { padding: 10px; overflow-y: auto; }
+#drawer-body .section { margin-bottom: 12px; }
+#drawer-body .section h4 {
+  margin: 0 0 6px 0; font-size: 11px;
+  color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.5px;
+}
+#drawer-body .kv {
+  display: flex; justify-content: space-between;
+  padding: 3px 0; border-bottom: 1px dashed var(--line);
+  font-family: "Consolas", monospace; font-size: 12px;
+}
+#drawer-body .kv .k { color: var(--text-dim); }
+#drawer-body .kv .v { color: var(--text); font-weight: 600; }
+
+/* ----------- 3D Labels (sprite-based) ----------- */
+.muted { color: var(--text-dim); }

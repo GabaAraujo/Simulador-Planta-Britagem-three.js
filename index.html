@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SCADA 3D — Britagem & Peneiramento (Circuito Fechado)</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- Topbar -->
+      <header id="topbar">
+        <div class="brand">
+          <span class="brand-dot"></span>
+          <strong>SCADA-3D</strong>
+          <span class="subtitle">Britagem &amp; Peneiramento — Circuito Fechado</span>
+        </div>
+        <div id="sim-controls">
+          <button id="btn-start" class="btn btn-ok">Start</button>
+          <button id="btn-stop" class="btn">Stop</button>
+          <button id="btn-reset" class="btn">Reset</button>
+          <button id="btn-toggle-return" class="btn">Oversize Return: ON</button>
+          <button id="btn-toggle-labels" class="btn">Labels: ON</button>
+          <button id="btn-estop" class="btn btn-danger">EMERGENCY STOP</button>
+        </div>
+        <div id="sim-clock">t = 0.0s</div>
+      </header>
+
+      <!-- Main layout: 3D + side panel -->
+      <main id="main">
+        <section id="viewport-wrap">
+          <div id="viewport"></div>
+          <div id="hint">Arraste para girar · Scroll para zoom · Clique em um equipamento</div>
+        </section>
+
+        <aside id="sidepanel">
+          <section class="panel">
+            <h3>Equipamentos</h3>
+            <div id="equip-status"></div>
+          </section>
+
+          <section class="panel">
+            <h3>Variáveis de Processo</h3>
+            <div id="tag-grid"></div>
+          </section>
+
+          <section class="panel">
+            <h3>Alarmes</h3>
+            <ul id="alarm-list"><li class="muted">Nenhum alarme ativo.</li></ul>
+          </section>
+        </aside>
+      </main>
+
+      <!-- Drawer / Modal de equipamento -->
+      <div id="drawer" class="drawer hidden" role="dialog" aria-hidden="true">
+        <div class="drawer-header">
+          <h3 id="drawer-title">Equipamento</h3>
+          <button id="drawer-close" class="btn">×</button>
+        </div>
+        <div id="drawer-body"></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
