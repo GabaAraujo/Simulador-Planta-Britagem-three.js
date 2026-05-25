@@ -514,8 +514,8 @@ export function buildPlant(scene: THREE.Scene): PlantCtx {
       pickables.push(p);
     }
 
-    // Label sprite acima do equipamento
-    const label = makeLabelSprite(def.id);
+    // Label sprite acima do equipamento (nome curto em PT-BR)
+    const label = makeLabelSprite(def.displayName);
     // posicionar de acordo com tipo:
     const labelOffsetY: Record<EquipmentId, number> = {
       SILO: 12.5,

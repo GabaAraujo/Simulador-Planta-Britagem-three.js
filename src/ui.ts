@@ -184,7 +184,7 @@ function renderEquipRows(container: HTMLElement, handlers: UIHandlers): void {
     const row = document.createElement("div");
     row.className = "equip-row";
     row.innerHTML = `
-      <span class="name">${def.id} <span class="muted">— ${def.label.replace(`${def.id} `, "")}</span></span>
+      <span class="name">${def.displayName} <span class="muted">— ${def.label}</span></span>
       <span id="equip-badge-${def.id}" class="badge STOP">STOP</span>
     `;
     row.addEventListener("click", () => handlers.onOpenEquipment(def.id));

@@ -55,6 +55,9 @@ export interface Tag {
 // ----------- Equipamento ----------- //
 export interface EquipmentDef {
   id: EquipmentId;
+  /** Nome curto em PT-BR exibido no sprite 3D e na lista lateral. */
+  displayName: string;
+  /** Descrição completa em PT-BR (mostrada no cabeçalho do drawer). */
   label: string;
   position: [number, number, number];
   /** Cor base do equipamento (em hex). */

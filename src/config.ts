@@ -16,7 +16,8 @@ import type {
 export const EQUIPMENTS: EquipmentDef[] = [
   {
     id: "SILO",
-    label: "SILO (Estocagem)",
+    displayName: "SILO",
+    label: "Silo de Estocagem",
     position: [-30, 0, 0],
     color: 0x6b7c93,
     tags: ["LT-101"],
@@ -24,7 +25,8 @@ export const EQUIPMENTS: EquipmentDef[] = [
   },
   {
     id: "FEEDER",
-    label: "FEEDER (Alimentador Vibratório)",
+    displayName: "ALIMENTADOR",
+    label: "Alimentador Vibratório",
     position: [-22, 0, 0],
     color: 0xc97b3a,
     tags: ["ST-102", "FV-102"],
@@ -32,7 +34,8 @@ export const EQUIPMENTS: EquipmentDef[] = [
   },
   {
     id: "JAW",
-    label: "JAW (Britador de Mandíbulas)",
+    displayName: "BRIT. MANDÍBULAS",
+    label: "Britador de Mandíbulas",
     position: [-14, 0, 0],
     color: 0x9aa5b1,
     tags: ["PT-103", "CT-103", "VT-104"],
@@ -40,7 +43,8 @@ export const EQUIPMENTS: EquipmentDef[] = [
   },
   {
     id: "CONV",
-    label: "CONV (TC-01 — Correia Transportadora)",
+    displayName: "CORREIA TC-01",
+    label: "Correia Transportadora TC-01",
     position: [1, 0, 0],
     color: 0x3b424c,
     tags: ["WT-105", "ST-105"],
@@ -48,21 +52,24 @@ export const EQUIPMENTS: EquipmentDef[] = [
   },
   {
     id: "SCREEN",
-    label: "SCREEN (Peneira Vibratória)",
+    displayName: "PENEIRA",
+    label: "Peneira Vibratória",
     position: [16, 0, 0],
     color: 0x4caf50,
     tags: ["FT-106"],
   },
   {
     id: "CONE",
-    label: "CONE (Britador Cônico Secundário)",
+    displayName: "BRIT. CÔNICO",
+    label: "Britador Cônico Secundário",
     position: [28, 0, -10],
     color: 0x8e44ad,
     tags: ["PT-106", "CT-106", "CSS-106"],
   },
   {
     id: "RETURN",
-    label: "RETURN (Retorno Oversize)",
+    displayName: "RETORNO",
+    label: "Retorno de Oversize",
     position: [22, 0, -5],
     color: 0xe67e22,
     tags: [],
