@@ -114,13 +114,110 @@ const matSteel = (color: number) =>
 const matRubber = (color: number) =>
   new THREE.MeshStandardMaterial({ color, roughness: 0.95, metalness: 0.05 });
 
+/**
+ * Constrói uma calha/chute retangular inclinado conectando `start` e `end`
+ * (coords locais ao grupo onde for adicionado).
+ *
+ * - Largura no eixo Z (transversal ao fluxo)
+ * - Altura é a "lateral" do chute (paredes laterais sobem para conter o material)
+ * - O eixo do chute fica alinhado ao vetor (end - start) no plano XY.
+ *   (z fica fixo: o chute não rotaciona em torno de Y.)
+ */
+function buildInclinedChute(
+  start: THREE.Vector3,
+  end: THREE.Vector3,
+  width: number,
+  height: number,
+  color: number,
+): THREE.Group {
+  const g = new THREE.Group();
+
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  const angleZ = Math.atan2(dy, dx); // rotação em torno de Z
+
+  const wallMat = matSteel(color);
+  const floorMat = matSteel(color);
+
+  // Piso (fundo do chute) — caixa fina alinhada ao eixo +X (antes de rotacionar)
+  const floorGeo = new THREE.BoxGeometry(length, 0.08, width);
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.castShadow = true;
+  floor.receiveShadow = true;
+  g.add(floor);
+
+  // Paredes laterais (Z+ e Z-)
+  const wallGeo = new THREE.BoxGeometry(length, height, 0.06);
+  const wallA = new THREE.Mesh(wallGeo, wallMat);
+  wallA.position.set(0, height / 2 - 0.04, width / 2);
+  wallA.castShadow = true;
+  g.add(wallA);
+  const wallB = wallA.clone();
+  wallB.position.z = -width / 2;
+  g.add(wallB);
+
+  // Rotaciona em torno de Z e posiciona no ponto médio entre start e end
+  g.rotation.z = angleZ;
+  g.position.set((start.x + end.x) / 2, (start.y + end.y) / 2, (start.z + end.z) / 2);
+
+  return g;
+}
+
+/** Constrói pernas/colunas estruturais de aço com travamento horizontal. */
+function buildSupportLegs(
+  width: number,
+  depth: number,
+  topY: number,
+  bottomY: number,
+  color: number,
+): THREE.Group {
+  const g = new THREE.Group();
+  const mat = matSteel(color);
+  const h = topY - bottomY;
+  if (h <= 0) return g;
+  const legGeo = new THREE.BoxGeometry(0.25, h, 0.25);
+  const yMid = (topY + bottomY) / 2;
+  const corners: [number, number][] = [
+    [+width / 2, +depth / 2],
+    [-width / 2, +depth / 2],
+    [+width / 2, -depth / 2],
+    [-width / 2, -depth / 2],
+  ];
+  for (const [cx, cz] of corners) {
+    const leg = new THREE.Mesh(legGeo, mat);
+    leg.position.set(cx, yMid, cz);
+    leg.castShadow = true;
+    g.add(leg);
+  }
+  // Travamento horizontal (cruzes) — apenas no meio se a altura ajudar
+  if (h > 2.5) {
+    const yBraceA = bottomY + h * 0.35;
+    const yBraceB = bottomY + h * 0.7;
+    const braceX = new THREE.BoxGeometry(width, 0.12, 0.12);
+    const braceZ = new THREE.BoxGeometry(0.12, 0.12, depth);
+    for (const y of [yBraceA, yBraceB]) {
+      const bxA = new THREE.Mesh(braceX, mat); bxA.position.set(0, y, +depth / 2); g.add(bxA);
+      const bxB = bxA.clone(); bxB.position.z = -depth / 2; g.add(bxB);
+      const bzA = new THREE.Mesh(braceZ, mat); bzA.position.set(+width / 2, y, 0); g.add(bzA);
+      const bzB = bzA.clone(); bzB.position.x = -width / 2; g.add(bzB);
+    }
+  }
+  return g;
+}
+
 // ------------------------------------------------------------------ //
 // Builders de equipamento
 // ------------------------------------------------------------------ //
 function buildSilo(color: number): { group: THREE.Group; pickables: THREE.Object3D[] } {
   const g = new THREE.Group();
 
-  // skirt (base estrutural)
+  // Pernas estruturais (do chão até a base do silo, em coords locais y=-8 a y=0).
+  // O grupo é posicionado em y=8 (mundo) → pernas tocam o solo em y=0 mundial.
+  const legs = buildSupportLegs(4.6, 4.6, 0, -8, 0x2a3340);
+  g.add(legs);
+
+  // skirt (base estrutural anelar)
   const skirtGeo = new THREE.CylinderGeometry(3.2, 3.2, 1.5, 24);
   const skirt = new THREE.Mesh(skirtGeo, matSteel(0x445469));
   skirt.position.y = 0.75;
@@ -141,11 +238,23 @@ function buildSilo(color: number): { group: THREE.Group; pickables: THREE.Object
   funnel.castShadow = true;
   g.add(funnel);
 
-  // chute de saída
-  const chuteGeo = new THREE.CylinderGeometry(0.45, 0.45, 1.0, 12);
+  // boca de saída (gola curta sob o funil)
+  const chuteGeo = new THREE.CylinderGeometry(0.45, 0.45, 0.6, 12);
   const chute = new THREE.Mesh(chuteGeo, matSteel(0x37445b));
-  chute.position.set(0, 0.3, 0);
+  chute.position.set(0, 0.0, 0);
   g.add(chute);
+
+  // Chute lateral de descarga — desce em direção ao FEEDER (lado +X).
+  // O FEEDER está 8m à direita no mundo e ~2.5m abaixo do SILO (em y).
+  // Em coords locais: (0, -0.4, 0) → (7, -2.0, 0). Material desliza por gravidade.
+  const dischargeChute = buildInclinedChute(
+    new THREE.Vector3(0.2, -0.4, 0),
+    new THREE.Vector3(7.0, -2.0, 0),
+    1.2,
+    0.5,
+    0x37445b,
+  );
+  g.add(dischargeChute);
 
   // tampa superior
   const lidGeo = new THREE.CylinderGeometry(3.0, 3.0, 0.3, 24);
@@ -158,6 +267,11 @@ function buildSilo(color: number): { group: THREE.Group; pickables: THREE.Object
 
 function buildFeeder(color: number): { group: THREE.Group; pickables: THREE.Object3D[] } {
   const g = new THREE.Group();
+
+  // Pernas de suporte (do chão y=0 mundial até a base do alimentador y=5.5).
+  // Em coords locais: y=-5.5 a y=0.
+  const legs = buildSupportLegs(4.6, 3.2, 0, -5.5, 0x2a3340);
+  g.add(legs);
 
   // estrutura
   const baseGeo = new THREE.BoxGeometry(5, 0.4, 3);
@@ -184,7 +298,48 @@ function buildFeeder(color: number): { group: THREE.Group; pickables: THREE.Obje
   motorR.position.z = -1.7;
   g.add(motorR);
 
-  return { group: g, pickables: [tray, base] };
+  // Tremonha receptora aberta acima da calha (lado -X, onde o chute do SILO chega).
+  // Material vindo do silo cai aqui e desliza pela calha até a saída +X.
+  const hopperReceiver = new THREE.Group();
+  const hopperColor = 0x4a5b73;
+  const wallMat = matSteel(hopperColor);
+  // Piso angulado da tremonha (cone truncado 4 lados)
+  const hopperBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(1.6, 0.7, 1.4, 4, 1, true),
+    wallMat,
+  );
+  hopperBody.rotation.y = Math.PI / 4;
+  hopperBody.position.set(-1.6, 2.3, 0);
+  hopperReceiver.add(hopperBody);
+  // Borda superior (anel quadrado para sugerir abertura)
+  const rimGeo = new THREE.BoxGeometry(2.6, 0.12, 0.12);
+  const rimMat = matSteel(0x5b6a82);
+  for (const dz of [+1.3, -1.3]) {
+    const rim = new THREE.Mesh(rimGeo, rimMat);
+    rim.position.set(-1.6, 3.0, dz);
+    hopperReceiver.add(rim);
+  }
+  const rimGeoZ = new THREE.BoxGeometry(0.12, 0.12, 2.6);
+  for (const dx of [-0.3, -2.9]) {
+    const rim = new THREE.Mesh(rimGeoZ, rimMat);
+    rim.position.set(dx, 3.0, 0);
+    hopperReceiver.add(rim);
+  }
+  g.add(hopperReceiver);
+
+  // Chute de descarga: extremidade +X da calha (x=2.7, y=1.2) até o topo da
+  // tremonha do JAW. O JAW está 8m à direita e a tremonha começa em y=6.3
+  // mundial (= y=0.8 local do feeder). O chute desce 0.7m em ~5.3m horizontais.
+  const dischargeChute = buildInclinedChute(
+    new THREE.Vector3(2.7, 1.2, 0),
+    new THREE.Vector3(8.0, 0.5, 0),
+    1.4,
+    0.55,
+    0x37445b,
+  );
+  g.add(dischargeChute);
+
+  return { group: g, pickables: [tray, base, hopperBody] };
 }
 
 function buildJaw(color: number): { group: THREE.Group; pickables: THREE.Object3D[] } {
@@ -516,10 +671,10 @@ export function buildPlant(scene: THREE.Scene): PlantCtx {
 
     // Label sprite acima do equipamento (nome curto em PT-BR)
     const label = makeLabelSprite(def.displayName);
-    // posicionar de acordo com tipo:
+    // posicionar de acordo com tipo (Y é coordenada mundial absoluta):
     const labelOffsetY: Record<EquipmentId, number> = {
-      SILO: 12.5,
-      FEEDER: 3.0,
+      SILO: 20.5,   // silo elevado em y=8; corpo termina em y=17.5
+      FEEDER: 9.0,  // feeder elevado em y=5.5; tremonha receptora termina em ~y=8.5
       JAW: 8.5,
       CONV: 5.0,
       SCREEN: 6.0,
