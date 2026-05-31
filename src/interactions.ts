@@ -25,6 +25,8 @@ export function setupInteractions(
   scn: SceneCtx,
   plant: PlantCtx,
   onClick: (id: EquipmentId) => void,
+  getCamera: () => THREE.Camera = () => scn.camera,
+  onEmptyClick: () => void = () => {},
 ): Interactions {
   const ray = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
@@ -94,7 +96,7 @@ export function setupInteractions(
   function update() {
     if (!pointerActive && !pendingClick) return;
 
-    ray.setFromCamera(pointer, scn.camera);
+    ray.setFromCamera(pointer, getCamera());
     const hits = ray.intersectObjects(plant.pickables, false);
     const first = hits[0]?.object;
     const id = (first?.userData.equipmentId as EquipmentId | undefined) ?? null;
@@ -104,6 +106,7 @@ export function setupInteractions(
     if (pendingClick) {
       pendingClick = false;
       if (id) onClick(id);
+      else onEmptyClick();
     }
   }
 

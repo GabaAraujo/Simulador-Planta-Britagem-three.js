@@ -21,6 +21,9 @@
           <button id="btn-reset" class="btn">Reset</button>
           <button id="btn-toggle-return" class="btn">Oversize Return: ON</button>
           <button id="btn-toggle-labels" class="btn">Labels: ON</button>
+          <button id="btn-toggle-view" class="btn" title="Alternar perspectiva (tecla V)">ISO</button>
+          <button id="btn-fit" class="btn" title="Enquadrar planta (tecla F)">Enquadrar</button>
+          <button id="btn-matrix" class="btn" title="Matriz Causa & Efeito (tecla M)">C&amp;E</button>
           <button id="btn-estop" class="btn btn-danger">EMERGENCY STOP</button>
         </div>
         <div id="sim-clock">t = 0.0s</div>
@@ -45,11 +48,41 @@
           </section>
 
           <section class="panel">
-            <h3>Alarmes</h3>
+            <div class="panel-head">
+              <h3>Alarmes <span id="alarm-count" class="alarm-count"></span></h3>
+              <button id="btn-ack-all" class="btn" disabled>ACK todos</button>
+            </div>
             <ul id="alarm-list"><li class="muted">Nenhum alarme ativo.</li></ul>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Simular Falhas</h3>
+              <button id="btn-clear-faults" class="btn" disabled>Limpar</button>
+            </div>
+            <div id="fault-list"></div>
           </section>
         </aside>
       </main>
+
+      <!-- Matriz Causa & Efeito (overlay) -->
+      <div id="ce-overlay" class="ce-overlay hidden" role="dialog" aria-hidden="true">
+        <div class="ce-modal">
+          <div class="ce-header">
+            <h3>Matriz Causa &amp; Efeito</h3>
+            <span class="ce-mode">Modo: somente visualização</span>
+            <button id="ce-close" class="btn" aria-label="Fechar">×</button>
+          </div>
+          <div class="ce-legend">
+            <span class="lg lg-x">X</span> relação marcada
+            <span class="lg lg-active">●</span> causa ativa
+            <span class="lg lg-acting">●</span> efeito atuaria agora
+          </div>
+          <div class="ce-body">
+            <table id="ce-table"></table>
+          </div>
+        </div>
+      </div>
 
       <!-- Drawer / Modal de equipamento -->
       <div id="drawer" class="drawer hidden" role="dialog" aria-hidden="true">

@@ -29,7 +29,15 @@ export type TagId =
   | "CT-106"
   | "CSS-106";
 
-export type LoopId = "LIC-101" | "CIC-103" | "FIC-105" | "VAH-104";
+export type LoopId = "LIC-101" | "CIC-103" | "FIC-105" | "VAH-104" | "IAH-106";
+
+// ----------- Falhas (injeção manual para testar SCADA) ----------- //
+export type FaultId =
+  | "JAW_BEARING"     // desgaste de mancal → eleva vibração no JAW
+  | "JAW_OVERLOAD"    // sobrecarga no JAW → eleva corrente no JAW
+  | "SCREEN_BLIND"    // peneira cega → eficiência cai, mais oversize
+  | "CONE_JAM"        // britador cônico travado → eleva corrente no CONE
+  | "SILO_LOW";       // falha de alimentação → silo drena
 
 export type TagKind = "PV" | "MV";
 export type EquipmentState = "RUN" | "STOP" | "ALARM";
@@ -87,7 +95,10 @@ export interface Alarm {
   tag: TagId;
   equipment: EquipmentId;
   message: string;
+  /** Condição de alarme está presente agora. */
   active: boolean;
+  /** Operador reconheceu (ACK). */
+  acknowledged: boolean;
   /** Timestamp de ativação (s na sim). */
   since: number;
 }
@@ -126,4 +137,6 @@ export interface SimState {
   loops: Record<LoopId, ControlLoop>;
   /** Eficiência da peneira (0..1). Dinâmica. */
   screenEff: number;
+  /** Falhas ativas injetadas pelo operador (para teste). */
+  faults: Record<FaultId, boolean>;
 }

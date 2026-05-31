@@ -10,6 +10,7 @@ import type {
   TagId,
   ControlLoop,
   LoopId,
+  FaultId,
 } from "./types";
 
 // ----------- Equipamentos (layout linear) ----------- //
@@ -161,7 +162,53 @@ export const LOOPS: Record<LoopId, ControlLoop> = {
     setpoint: SETPOINTS.VIB_HI,
     inputTag: "VT-104",
   },
+  "IAH-106": {
+    id: "IAH-106",
+    description: "Alarme de alta corrente no britador cônico.",
+    setpoint: 170,
+    inputTag: "CT-106",
+  },
 };
+
+// ----------- Catálogo de falhas (para o painel "Simular falhas") ----------- //
+export interface FaultDef {
+  id: FaultId;
+  equipment: EquipmentId;
+  label: string;
+  description: string;
+}
+export const FAULTS: FaultDef[] = [
+  {
+    id: "JAW_BEARING",
+    equipment: "JAW",
+    label: "Desgaste de mancal (JAW)",
+    description: "Eleva a vibração do britador → dispara VAH-104.",
+  },
+  {
+    id: "JAW_OVERLOAD",
+    equipment: "JAW",
+    label: "Sobrecarga (JAW)",
+    description: "Eleva a corrente do motor → dispara IAH-103.",
+  },
+  {
+    id: "SCREEN_BLIND",
+    equipment: "SCREEN",
+    label: "Peneira cega",
+    description: "Eficiência cai; mais oversize volta ao circuito.",
+  },
+  {
+    id: "CONE_JAM",
+    equipment: "CONE",
+    label: "Britador cônico travado",
+    description: "Eleva a corrente do cone → dispara IAH-106.",
+  },
+  {
+    id: "SILO_LOW",
+    equipment: "SILO",
+    label: "Falha de alimentação (silo)",
+    description: "Reposição zerada; nível e vazão caem.",
+  },
+];
 
 // ----------- Parâmetros físicos da simulação ----------- //
 export const SIM = {

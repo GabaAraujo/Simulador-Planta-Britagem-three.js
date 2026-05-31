@@ -27,6 +27,10 @@ export interface ParticleStream {
   baseSpeed: number;
   /** Visível. */
   enabled: boolean;
+  /** LUT de pontos pré-amostrados da curva (evita getPointAt por frame). */
+  lut: THREE.Vector3[];
+  /** Marca se houve alguma escrita na última atualização (evita upload à GPU à toa). */
+  lastVisibleFrac: number;
 }
 
 export interface PlantCtx {
@@ -588,32 +592,56 @@ function makeParticleStream(
     progress[i] = i / count; // espalhar uniformemente
   }
 
-  return { mesh, curve, progress, count, baseSpeed, enabled: true };
+  // LUT: amostra a curva uma única vez (getPointAt é caro p/ chamar por frame).
+  const LUT_SIZE = 256;
+  const lut: THREE.Vector3[] = new Array(LUT_SIZE + 1);
+  for (let i = 0; i <= LUT_SIZE; i++) {
+    lut[i] = curve.getPointAt(i / LUT_SIZE, new THREE.Vector3());
+  }
+
+  return { mesh, curve, progress, count, baseSpeed, enabled: true, lut, lastVisibleFrac: -1 };
 }
+
+// Temporários reutilizados (evita alocação por frame).
+const _streamMat = new THREE.Matrix4();
+const _streamHidden = new THREE.Matrix4().makeScale(0, 0, 0);
 
 /** Atualiza posições das partículas. `flowFactor` 0..1+ controla velocidade e densidade. */
 export function updateStream(stream: ParticleStream, dt: number, flowFactor: number): void {
-  const m = new THREE.Matrix4();
-  const pos = new THREE.Vector3();
   const speed = stream.baseSpeed * Math.max(0, flowFactor);
   // densidade: se flow ≈ 0, esconde a maioria das partículas
   const visibleFrac = stream.enabled ? Math.min(1, flowFactor * 1.2) : 0;
 
-  for (let i = 0; i < stream.count; i++) {
+  // Sem fluxo nesta e na última atualização → nada a fazer (poupa upload à GPU).
+  if (visibleFrac === 0 && stream.lastVisibleFrac === 0) return;
+  stream.lastVisibleFrac = visibleFrac;
+
+  const lut = stream.lut;
+  const lutMax = lut.length - 1;
+  const count = stream.count;
+
+  for (let i = 0; i < count; i++) {
     let p = stream.progress[i] + speed * dt;
     if (p >= 1) p -= Math.floor(p);
     stream.progress[i] = p;
 
-    const visible = stream.enabled && i / stream.count < visibleFrac;
+    const visible = stream.enabled && i / count < visibleFrac;
     if (!visible) {
-      // "esconder" colapsando escala para 0
-      m.makeScale(0, 0, 0);
-      stream.mesh.setMatrixAt(i, m);
+      stream.mesh.setMatrixAt(i, _streamHidden);
       continue;
     }
-    stream.curve.getPointAt(p, pos);
-    m.makeTranslation(pos.x, pos.y, pos.z);
-    stream.mesh.setMatrixAt(i, m);
+    // amostra a LUT com interpolação linear entre pontos vizinhos
+    const f = p * lutMax;
+    const i0 = Math.floor(f);
+    const a = lut[i0];
+    const b = lut[i0 + 1] ?? a;
+    const t = f - i0;
+    _streamMat.makeTranslation(
+      a.x + (b.x - a.x) * t,
+      a.y + (b.y - a.y) * t,
+      a.z + (b.z - a.z) * t,
+    );
+    stream.mesh.setMatrixAt(i, _streamMat);
   }
   stream.mesh.instanceMatrix.needsUpdate = true;
 }

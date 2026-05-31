@@ -24,6 +24,7 @@ import type {
   TagId,
   Alarm,
   ControlLoop,
+  FaultId,
 } from "./types";
 import { TAGS, LOOPS, SETPOINTS, SIM } from "./config";
 
@@ -61,6 +62,13 @@ export function createInitialState(): SimState {
     alarms: [],
     loops: loops as SimState["loops"],
     screenEff: SIM.EFF_BASE,
+    faults: {
+      JAW_BEARING: false,
+      JAW_OVERLOAD: false,
+      SCREEN_BLIND: false,
+      CONE_JAM: false,
+      SILO_LOW: false,
+    },
   };
 }
 
@@ -110,6 +118,7 @@ export function resetSim(s: SimState): void {
   s.loops = fresh.loops;
   s.screenEff = fresh.screenEff;
   s.eStop = false;
+  s.faults = fresh.faults;
   // mantém running, oversizeReturn, showLabels conforme estavam
 }
 
@@ -163,7 +172,8 @@ export function stepSim(s: SimState, dt: number): void {
 
   // Balanço do silo: enchimento "contínuo" suposto (ex.: caminhão / alimentação externa)
   // Para deixar o setpoint atingível, fornecemos refill proporcional ao consumo médio.
-  const refillRate = 0.05; // m / s (taxa de reposição artificial)
+  // Falha SILO_LOW: corta totalmente a reposição (silo drena).
+  const refillRate = s.faults.SILO_LOW ? 0 : 0.05;
   const drainRate = feedTph / 800; // converte t/h em m/s de queda no nível (escala fictícia)
   v["LT-101"] = clamp(v["LT-101"] + (refillRate - drainRate) * dt, 0, SIM.SILO_CAPACITY_M);
 
@@ -182,71 +192,137 @@ export function stepSim(s: SimState, dt: number): void {
   v["PT-103"] = lp(v["PT-103"], 60 + v["WT-105"] * 0.35 + Math.sin(s.t * 1.1) * 4, dt, 2);
 
   // Corrente JAW (A) — proporcional à vazão e c/ ruído
-  const ctTarget = SIM.CT_OFFSET + v["WT-105"] * SIM.K_CT_FROM_FLOW + Math.sin(s.t * 0.8) * 3;
+  // Falha JAW_OVERLOAD: soma uma carga extra que leva a corrente acima do limite.
+  const jawOverloadBoost = s.faults.JAW_OVERLOAD ? 55 + Math.sin(s.t * 0.5) * 4 : 0;
+  const ctTarget = SIM.CT_OFFSET + v["WT-105"] * SIM.K_CT_FROM_FLOW + Math.sin(s.t * 0.8) * 3 + jawOverloadBoost;
   v["CT-103"] = lp(v["CT-103"], ctTarget, dt, 1.8);
 
   // Vibração JAW — sobe se CT alto; "entupimento" se WT muito alto
+  // Falha JAW_BEARING: desgaste de mancal eleva a vibração diretamente.
   const overload = Math.max(0, v["CT-103"] - SETPOINTS.JAW_I_MAX) * 0.12;
   const choke = Math.max(0, v["WT-105"] - 320) * 0.06;
-  const vibTarget = 1.2 + v["CT-103"] * SIM.K_VIB * 0.4 + overload + choke + Math.sin(s.t * 2.3) * 0.4;
+  const jawBearingBoost = s.faults.JAW_BEARING ? 9 + Math.sin(s.t * 3.1) * 1.5 : 0;
+  const vibTarget = 1.2 + v["CT-103"] * SIM.K_VIB * 0.4 + overload + choke + Math.sin(s.t * 2.3) * 0.4 + jawBearingBoost;
   v["VT-104"] = lp(v["VT-104"], vibTarget, dt, 1.2);
 
   // Vazão volumétrica para peneira
   v["FT-106"] = lp(v["FT-106"], v["WT-105"] * SIM.TPH_TO_M3H, dt, 1.5);
 
   // Eficiência peneira: cai um pouco com vazão alta
+  // Falha SCREEN_BLIND: peneira cega → eficiência despenca.
+  const screenBlindPenalty = s.faults.SCREEN_BLIND ? 0.35 : 0;
   s.screenEff = clamp(
-    SIM.EFF_BASE - Math.max(0, v["FT-106"] - 120) * 0.0015,
-    0.45,
+    SIM.EFF_BASE - Math.max(0, v["FT-106"] - 120) * 0.0015 - screenBlindPenalty,
+    0.20,
     0.92,
   );
 
   // CONE: corrente e pressão dependem do oversize que chega + CSS
+  // Falha CONE_JAM: travamento mecânico eleva muito a corrente.
   const oversize_tph = (v["WT-105"]) * (1 - s.screenEff);
   const css = v["CSS-106"];
   const cssFactor = clamp(40 / Math.max(6, css), 0.5, 3.0); // CSS pequeno → factor alto
-  const coneCurrentTarget = 25 + oversize_tph * 0.35 * SIM.K_CONE_CSS * cssFactor;
+  const coneJamBoost = s.faults.CONE_JAM ? 90 + Math.sin(s.t * 0.7) * 6 : 0;
+  const coneCurrentTarget = 25 + oversize_tph * 0.35 * SIM.K_CONE_CSS * cssFactor + coneJamBoost;
   v["CT-106"] = lp(v["CT-106"], coneCurrentTarget, dt, 2);
   v["PT-106"] = lp(v["PT-106"], 55 + oversize_tph * 0.4 + cssFactor * 6, dt, 2);
 
   // ----------- Estados / Alarmes ----------- //
   // Alarme alta vibração (VAH-104)
   const vibAlarm = v["VT-104"] > SETPOINTS.VIB_HI;
-  setAlarm(s, {
-    id: "VAH-104:JAW",
-    loop: "VAH-104",
-    tag: "VT-104",
-    equipment: "JAW",
-    message: `Alta vibração no JAW: ${v["VT-104"].toFixed(2)} mm/s (limite ${SETPOINTS.VIB_HI})`,
-    active: vibAlarm,
-    since: vibAlarm ? s.t : 0,
-  });
+  setAlarm(
+    s,
+    "VAH-104:JAW",
+    "VAH-104",
+    "VT-104",
+    "JAW",
+    vibAlarm,
+    `Alta vibração no JAW: ${v["VT-104"].toFixed(2)} mm/s (limite ${SETPOINTS.VIB_HI})`,
+  );
+
+  // Alarme alta corrente JAW (CT-103 acima do hi da tag)
+  const jawIAlarm = v["CT-103"] > 160;
+  setAlarm(
+    s,
+    "IAH-103:JAW",
+    "CIC-103",
+    "CT-103",
+    "JAW",
+    jawIAlarm,
+    `Alta corrente no JAW: ${v["CT-103"].toFixed(0)} A (limite 160)`,
+  );
+
+  // Alarme alta corrente CONE (CT-106 acima do hi da tag)
+  const coneIAlarm = v["CT-106"] > 170;
+  setAlarm(
+    s,
+    "IAH-106:CONE",
+    "IAH-106",
+    "CT-106",
+    "CONE",
+    coneIAlarm,
+    `Alta corrente no CONE: ${v["CT-106"].toFixed(0)} A (limite 170)`,
+  );
 
   // Estados de equipamentos
   s.equipState.SILO   = pickRunningState(v["LT-101"] > 0.1, false);
   s.equipState.FEEDER = pickRunningState(v["FV-102"] > 1, false);
-  s.equipState.JAW    = pickRunningState(v["CT-103"] > SIM.CT_OFFSET + 1, vibAlarm);
+  s.equipState.JAW    = pickRunningState(v["CT-103"] > SIM.CT_OFFSET + 1, vibAlarm || jawIAlarm);
   s.equipState.CONV   = pickRunningState(v["WT-105"] > 1, false);
   s.equipState.SCREEN = pickRunningState(v["FT-106"] > 1, false);
-  s.equipState.CONE   = pickRunningState(s.oversizeReturn && oversize_tph > 1, false);
+  s.equipState.CONE   = pickRunningState(s.oversizeReturn && oversize_tph > 1, coneIAlarm);
   s.equipState.RETURN = pickRunningState(s.oversizeReturn && oversize_tph > 1, false);
 }
 
 // ------------------------------------------------------------------ //
-// Alarmes (manutenção da lista)
+// Alarmes (ciclo de vida estilo ISA-18.2 simplificado)
+//  - condição presente + não reconhecido  → ativo (pisca)
+//  - condição presente + reconhecido        → ativo reconhecido
+//  - condição cessou   + não reconhecido    → RTN (permanece na lista até ACK)
+//  - condição cessou   + reconhecido        → removido
 // ------------------------------------------------------------------ //
-function setAlarm(s: SimState, candidate: Alarm): void {
-  const existing = s.alarms.find((a) => a.id === candidate.id);
-  if (candidate.active) {
+function setAlarm(
+  s: SimState,
+  id: string,
+  loop: Alarm["loop"],
+  tag: TagId,
+  equipment: EquipmentId,
+  active: boolean,
+  message: string,
+): void {
+  const existing = s.alarms.find((a) => a.id === id);
+  if (active) {
     if (existing) {
-      existing.message = candidate.message;
+      existing.message = message;
+      if (!existing.active) {
+        // re-disparo: volta a exigir reconhecimento
+        existing.acknowledged = false;
+        existing.since = s.t;
+      }
       existing.active = true;
     } else {
-      s.alarms.push({ ...candidate });
+      s.alarms.push({ id, loop, tag, equipment, message, active: true, acknowledged: false, since: s.t });
     }
   } else if (existing) {
-    s.alarms = s.alarms.filter((a) => a.id !== candidate.id);
+    existing.active = false;
+    if (existing.acknowledged) {
+      s.alarms = s.alarms.filter((a) => a.id !== id);
+    }
   }
+}
+
+/** Reconhece um alarme; se já normalizado, sai da lista. */
+export function ackAlarm(s: SimState, id: string): void {
+  const a = s.alarms.find((x) => x.id === id);
+  if (!a) return;
+  a.acknowledged = true;
+  if (!a.active) s.alarms = s.alarms.filter((x) => x.id !== id);
+}
+
+/** Reconhece todos; remove os já normalizados. */
+export function ackAllAlarms(s: SimState): void {
+  for (const a of s.alarms) a.acknowledged = true;
+  s.alarms = s.alarms.filter((a) => a.active);
 }
 
 // ------------------------------------------------------------------ //
@@ -274,4 +350,18 @@ export function eStop(s: SimState): void {
 }
 export function clearEStop(s: SimState): void {
   s.eStop = false;
+}
+
+// ------------------------------------------------------------------ //
+// Injeção de falhas (apenas para teste do SCADA)
+// ------------------------------------------------------------------ //
+export function toggleFault(s: SimState, id: FaultId): boolean {
+  s.faults[id] = !s.faults[id];
+  return s.faults[id];
+}
+export function setFault(s: SimState, id: FaultId, active: boolean): void {
+  s.faults[id] = active;
+}
+export function clearAllFaults(s: SimState): void {
+  for (const k of Object.keys(s.faults) as FaultId[]) s.faults[k] = false;
 }
