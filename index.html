@@ -8,44 +8,62 @@
   </head>
   <body>
     <div id="app">
-      <!-- Topbar -->
+      <!-- Topbar — tema claro, controles agrupados -->
       <header id="topbar">
         <div class="brand">
           <span class="brand-dot"></span>
-          <strong>SCADA-3D</strong>
-          <span class="subtitle">Britagem &amp; Peneiramento — Circuito Fechado</span>
+          <div class="brand-text">
+            <strong>SCADA-3D</strong>
+            <span class="subtitle">Britagem &amp; Peneiramento</span>
+          </div>
         </div>
-        <div id="sim-controls">
-          <button id="btn-start" class="btn btn-ok">Start</button>
-          <button id="btn-stop" class="btn">Stop</button>
-          <button id="btn-reset" class="btn">Reset</button>
-          <button id="btn-toggle-return" class="btn">Oversize Return: ON</button>
-          <button id="btn-toggle-labels" class="btn">Labels: ON</button>
-          <button id="btn-toggle-view" class="btn" title="Alternar perspectiva (tecla V)">ISO</button>
-          <button id="btn-fit" class="btn" title="Enquadrar planta (tecla F)">Enquadrar</button>
-          <button id="btn-matrix" class="btn" title="Matriz Causa & Efeito (tecla M)">C&amp;E</button>
-          <button id="btn-estop" class="btn btn-danger">EMERGENCY STOP</button>
-        </div>
-        <div id="sim-clock">t = 0.0s</div>
+
+        <div id="plant-status" class="status-pill status-stop" aria-live="polite">Parada</div>
+
+        <nav id="sim-controls" class="toolbar" aria-label="Controles da planta">
+          <div class="toolbar-group">
+            <span class="toolbar-label">Planta</span>
+            <button id="btn-start" class="btn btn-primary" type="button" title="Espaço">▶ Iniciar</button>
+            <button id="btn-stop" class="btn" type="button" title="Espaço">⏸ Parar</button>
+            <button id="btn-reset" class="btn" type="button" title="Tecla R">↺ Reset</button>
+          </div>
+          <div class="toolbar-group">
+            <span class="toolbar-label">Visual</span>
+            <button id="btn-toggle-view" class="btn" type="button" title="Tecla V">Vista 3D</button>
+            <button id="btn-fit" class="btn" type="button" title="Tecla F">Enquadrar</button>
+            <button id="btn-toggle-labels" class="btn" type="button" title="Tecla L">Nomes</button>
+            <button id="btn-toggle-return" class="btn" type="button">Retorno</button>
+            <button id="btn-matrix" class="btn" type="button" title="Tecla M">Matriz C&amp;E</button>
+          </div>
+          <button id="btn-estop" class="btn btn-danger" type="button">⛔ Emergência</button>
+        </nav>
+
+        <div id="sim-clock" title="Tempo de simulação">0,0 s</div>
       </header>
 
       <!-- Main layout: 3D + side panel -->
       <main id="main">
         <section id="viewport-wrap">
           <div id="viewport"></div>
-          <div id="hint">Arraste para girar · Scroll para zoom · Clique em um equipamento</div>
+          <div id="hint">🖱️ Arraste para girar · Scroll para zoom · Clique no equipamento</div>
         </section>
 
         <aside id="sidepanel">
+          <section class="panel panel-gauges">
+            <h3>Níveis e vazões</h3>
+            <p class="panel-hint">Barras ao vivo — verde = normal · amarelo = atenção · vermelho = alarme</p>
+            <div id="gauge-panel"></div>
+          </section>
+
           <section class="panel">
             <h3>Equipamentos</h3>
             <div id="equip-status"></div>
           </section>
 
-          <section class="panel">
-            <h3>Variáveis de Processo</h3>
+          <details class="panel panel-details" open>
+            <summary>Todas as tags <span class="muted">(avançado)</span></summary>
             <div id="tag-grid"></div>
-          </section>
+          </details>
 
           <section class="panel">
             <div class="panel-head">
@@ -61,6 +79,14 @@
               <button id="btn-clear-faults" class="btn" disabled>Limpar</button>
             </div>
             <div id="fault-list"></div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <h3>Ações de Mitigação</h3>
+              <span class="muted" style="font-size:10px;">Efeito 3D no equipamento ao executar</span>
+            </div>
+            <div id="mitigation-list"></div>
           </section>
         </aside>
       </main>

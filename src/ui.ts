@@ -7,8 +7,16 @@
  *  - Drawer detalhado de equipamento
  */
 
-import type { EquipmentId, SimState, TagId, EquipmentState, LoopId, FaultId } from "./types";
-import { EQUIPMENTS, TAG_BY_ID, FAULTS } from "./config";
+import type {
+  EquipmentId,
+  SimState,
+  TagId,
+  EquipmentState,
+  LoopId,
+  FaultId,
+  MitigationActionId,
+} from "./types";
+import { EQUIPMENTS, TAG_BY_ID, FAULTS, MITIGATIONS, SETPOINTS } from "./config";
 import {
   start,
   stop,
@@ -19,6 +27,9 @@ import {
   ackAllAlarms,
   toggleFault,
   clearAllFaults,
+  startMitigation,
+  cancelMitigation,
+  getMitigationProgress,
 } from "./sim";
 import { createTrendStore } from "./trends";
 import {
@@ -68,6 +79,23 @@ interface KnobDef {
   unit: string;
 }
 
+// Barras principais (leitura rápida para o operador)
+interface GaugeDef {
+  tagId: TagId;
+  title: string;
+  layout: "vertical" | "horizontal";
+  setpointLoop?: LoopId;
+}
+
+const GAUGES: GaugeDef[] = [
+  { tagId: "LT-101", title: "Nível do silo", layout: "vertical", setpointLoop: "LIC-101" },
+  { tagId: "WT-105", title: "Vazão na correia", layout: "horizontal", setpointLoop: "FIC-105" },
+  { tagId: "FV-102", title: "Alimentador (FV)", layout: "horizontal" },
+  { tagId: "CT-103", title: "Corrente — mandíbulas", layout: "horizontal" },
+  { tagId: "VT-104", title: "Vibração — mandíbulas", layout: "horizontal" },
+  { tagId: "CT-106", title: "Corrente — cônico", layout: "horizontal" },
+];
+
 const KNOBS: Partial<Record<EquipmentId, KnobDef>> = {
   SILO: { label: "SP Nível (LIC-101)", kind: "loopSetpoint", key: "LIC-101", min: 2, max: 9, step: 0.1, unit: "m" },
   CONV: { label: "SP Vazão (FIC-105)", kind: "loopSetpoint", key: "FIC-105", min: 100, max: 320, step: 5, unit: "t/h" },
@@ -98,6 +126,7 @@ export function setupUI(state: SimState, handlers: UIHandlers): UI {
   const $btnFit = byId<HTMLButtonElement>("btn-fit");
   const $btnEStop = byId<HTMLButtonElement>("btn-estop");
   const $clock = byId<HTMLDivElement>("sim-clock");
+  const $plantStatus = byId<HTMLDivElement>("plant-status");
 
   // Histórico em memória para os sparklines do drawer (~30 s @ 10 Hz).
   const trends = createTrendStore(Object.keys(TAG_BY_ID) as TagId[], 300);
@@ -167,7 +196,7 @@ export function setupUI(state: SimState, handlers: UIHandlers): UI {
 
   function flashEStopButton() {
     $btnEStop.classList.toggle("btn-danger", true);
-    $btnEStop.textContent = state.eStop ? "E-STOP ATIVO (clique Start)" : "EMERGENCY STOP";
+    $btnEStop.textContent = state.eStop ? "⛔ E-Stop ativo" : "⛔ Emergência";
   }
 
   // ----------- Render inicial ----------- //
@@ -178,6 +207,8 @@ export function setupUI(state: SimState, handlers: UIHandlers): UI {
   const $alarmCount = byId<HTMLSpanElement>("alarm-count");
   const $faultList = byId<HTMLDivElement>("fault-list");
   const $btnClearFaults = byId<HTMLButtonElement>("btn-clear-faults");
+  const $mitigationList = byId<HTMLDivElement>("mitigation-list");
+  const $gaugePanel = byId<HTMLDivElement>("gauge-panel");
   const $btnMatrix = byId<HTMLButtonElement>("btn-matrix");
   const $ceOverlay = byId<HTMLDivElement>("ce-overlay");
   const $ceClose = byId<HTMLButtonElement>("ce-close");
@@ -199,8 +230,10 @@ export function setupUI(state: SimState, handlers: UIHandlers): UI {
   });
 
   renderEquipRows($equipStatus, handlers);
+  renderGaugePanel($gaugePanel);
   renderTagCards($tagGrid, state);
   renderFaultRows($faultList);
+  renderMitigationRows($mitigationList);
 
   // Toggle de uma falha (delegação de eventos)
   $faultList.addEventListener("click", (ev) => {
@@ -214,6 +247,20 @@ export function setupUI(state: SimState, handlers: UIHandlers): UI {
   $btnClearFaults.addEventListener("click", () => {
     clearAllFaults(state);
     refresh();
+  });
+
+  // Ações de mitigação: iniciar / cancelar (delegação)
+  $mitigationList.addEventListener("click", (ev) => {
+    const target = ev.target as HTMLElement;
+    const startId = target.getAttribute("data-mitigate");
+    const cancelId = target.getAttribute("data-cancel-mitigate");
+    if (startId) {
+      startMitigation(state, startId as MitigationActionId);
+      refresh();
+    } else if (cancelId) {
+      cancelMitigation(state, cancelId as MitigationActionId);
+      refresh();
+    }
   });
 
   // ----------- Matriz Causa & Efeito (overlay) ----------- //
@@ -281,23 +328,37 @@ export function setupUI(state: SimState, handlers: UIHandlers): UI {
   }
 
   function setViewMode(mode: "3d" | "iso") {
-    // O rótulo mostra o modo de DESTINO (clicar leva até ele).
-    $btnToggleView.textContent = mode === "3d" ? "ISO" : "3D";
+    $btnToggleView.textContent = mode === "3d" ? "Vista ISO" : "Vista 3D";
     $btnToggleView.classList.toggle("is-active", mode === "iso");
   }
 
   function updateToggles() {
-    $btnToggleReturn.textContent = `Oversize Return: ${state.oversizeReturn ? "ON" : "OFF"}`;
+    $btnToggleReturn.textContent = state.oversizeReturn ? "Retorno: ligado" : "Retorno: desligado";
     $btnToggleReturn.classList.toggle("btn-ok", state.oversizeReturn);
-    $btnToggleLabels.textContent = `Labels: ${state.showLabels ? "ON" : "OFF"}`;
+    $btnToggleLabels.textContent = state.showLabels ? "Nomes: sim" : "Nomes: não";
     $btnToggleLabels.classList.toggle("btn-ok", state.showLabels);
-    $btnEStop.textContent = state.eStop ? "E-STOP ATIVO (clique Start)" : "EMERGENCY STOP";
+    $btnEStop.textContent = state.eStop ? "⛔ E-Stop ativo" : "⛔ Emergência";
+  }
+
+  function updatePlantStatus() {
+    if (state.eStop) {
+      $plantStatus.className = "status-pill status-estop";
+      $plantStatus.textContent = "Emergência";
+    } else if (state.running) {
+      $plantStatus.className = "status-pill status-run";
+      $plantStatus.textContent = "Em operação";
+    } else {
+      $plantStatus.className = "status-pill status-stop";
+      $plantStatus.textContent = "Parada";
+    }
   }
 
   // ----------- Refresh dinâmico ----------- //
   function refresh() {
-    // Clock
-    $clock.textContent = `t = ${state.t.toFixed(1)}s ${state.running ? "▶" : state.eStop ? "⛔" : "⏸"}`;
+    $clock.textContent = `${state.t.toFixed(1)} s`;
+    updatePlantStatus();
+
+    updateGauges(state);
 
     // Equipamentos (atualizar badges)
     for (const def of EQUIPMENTS) {
@@ -356,13 +417,17 @@ export function setupUI(state: SimState, handlers: UIHandlers): UI {
     }
     $btnClearFaults.disabled = activeFaults === 0;
 
+    // Mitigações: atualizar estado de cada linha (habilitada / rodando / progresso)
+    updateMitigationRows(state);
+
     // Matriz C&E: só atualiza quando visível
     if (!$ceOverlay.classList.contains("hidden")) updateCnEMatrix($ceTable, state);
 
     // Indicador no botão da matriz (quantas causas ativas existem)
     const activeCauseCount = Object.values(evalCauses(state)).filter(Boolean).length;
     $btnMatrix.classList.toggle("is-alarm", activeCauseCount > 0);
-    $btnMatrix.textContent = activeCauseCount > 0 ? `C&E (${activeCauseCount})` : "C&E";
+    $btnMatrix.textContent =
+      activeCauseCount > 0 ? `Matriz C&E (${activeCauseCount})` : "Matriz C&E";
 
     // Alimenta o histórico (sparklines)
     trends.push(state.values);
@@ -496,6 +561,205 @@ function renderFaultRows(container: HTMLElement): void {
       <span class="toggle" aria-label="ativar falha"></span>
     `;
     container.appendChild(row);
+  }
+}
+
+// ------------------------------------------------------------------ //
+// Painel de Ações de Mitigação
+// ------------------------------------------------------------------ //
+function renderMitigationRows(container: HTMLElement): void {
+  container.innerHTML = "";
+  for (const m of MITIGATIONS) {
+    const row = document.createElement("div");
+    row.className = "mitigation-row disabled";
+    row.id = `mit-${m.id}`;
+    row.dataset.mitigation = m.id;
+    row.title = m.description;
+    row.innerHTML = `
+      <div class="mit-info">
+        <div class="mit-label">
+          <span class="mit-equip">${m.equipment}</span>
+          <span>${m.label}</span>
+          <span class="mit-duration">${m.durationS}s</span>
+        </div>
+        <div class="mit-desc">${m.description}</div>
+        <div class="mit-progress-wrap" hidden>
+          <div class="mit-progress-bar"><div class="mit-progress-fill"></div></div>
+          <span class="mit-progress-text">0%</span>
+        </div>
+      </div>
+      <div class="mit-actions">
+        <button class="btn mit-btn-start" data-mitigate="${m.id}">EXECUTAR</button>
+        <button class="btn mit-btn-cancel" data-cancel-mitigate="${m.id}" hidden>CANCELAR</button>
+      </div>
+    `;
+    container.appendChild(row);
+  }
+}
+
+function updateMitigationRows(state: SimState): void {
+  for (const m of MITIGATIONS) {
+    const row = document.getElementById(`mit-${m.id}`);
+    if (!row) continue;
+
+    const faultActive = state.faults[m.faultId];
+    const progress = getMitigationProgress(state, m.id);
+    const running = progress !== null;
+    const canStart =
+      state.running && !state.eStop && faultActive && !running;
+
+    row.classList.toggle("disabled", !faultActive);
+    row.classList.toggle("running", running);
+    row.classList.toggle("ready", canStart);
+
+    const btnStart = row.querySelector<HTMLButtonElement>(".mit-btn-start");
+    const btnCancel = row.querySelector<HTMLButtonElement>(".mit-btn-cancel");
+    const progressWrap = row.querySelector<HTMLDivElement>(".mit-progress-wrap");
+    const progressFill = row.querySelector<HTMLDivElement>(".mit-progress-fill");
+    const progressText = row.querySelector<HTMLSpanElement>(".mit-progress-text");
+
+    if (btnStart) {
+      btnStart.hidden = running;
+      btnStart.disabled = !canStart;
+    }
+    if (btnCancel) btnCancel.hidden = !running;
+    if (progressWrap) progressWrap.hidden = !running;
+
+    if (running && progressFill && progressText) {
+      const pct = Math.round((progress as number) * 100);
+      progressFill.style.width = `${pct}%`;
+      progressText.textContent = `${pct}%`;
+    }
+  }
+}
+
+function pct01(val: number, min: number, max: number): number {
+  const span = Math.max(0.001, max - min);
+  return Math.min(1, Math.max(0, (val - min) / span));
+}
+
+function getGaugeSp(state: SimState, g: GaugeDef): number | null {
+  if (!g.setpointLoop) return null;
+  return state.loops[g.setpointLoop]?.setpoint ?? null;
+}
+
+function isGaugeWarn(tagId: TagId, val: number): boolean {
+  if (tagId === "CT-103") return val > SETPOINTS.JAW_I_MAX;
+  const tag = TAG_BY_ID[tagId];
+  if (tag.hi === undefined) return false;
+  return val > tag.hi * 0.85 && val <= tag.hi;
+}
+
+function renderGaugePanel(container: HTMLElement): void {
+  container.innerHTML = "";
+
+  const legend = document.createElement("div");
+  legend.className = "gauge-legend";
+  legend.innerHTML = `
+    <span class="lg-val">Valor</span>
+    <span class="lg-sp">Setpoint</span>
+    <span class="lg-hi">Alarme</span>
+  `;
+  container.appendChild(legend);
+
+  for (const g of GAUGES) {
+    const tag = TAG_BY_ID[g.tagId];
+    const card = document.createElement("div");
+    card.className = "gauge-card";
+    card.id = `gauge-${g.tagId}`;
+
+    if (g.layout === "vertical") {
+      card.innerHTML = `
+        <div class="gauge-head">
+          <span class="gauge-title">${g.title}</span>
+          <span class="gauge-id">${g.tagId}</span>
+        </div>
+        <div class="gauge-silo-row">
+          <div class="gauge-vtrack">
+            <div class="gauge-vfill"></div>
+            <div class="gauge-vmark sp" hidden></div>
+            <div class="gauge-vmark hi" hidden></div>
+          </div>
+          <div class="gauge-silo-meta">
+            <div class="gauge-value-big"><span class="num">—</span><span class="unit">${tag.unit}</span></div>
+            <div class="gauge-pct">0% cheio</div>
+          </div>
+        </div>
+      `;
+    } else {
+      card.innerHTML = `
+        <div class="gauge-head">
+          <span class="gauge-title">${g.title}</span>
+          <span class="gauge-id">${g.tagId}</span>
+        </div>
+        <div class="gauge-hrow">
+          <div class="gauge-hvalue">
+            <span class="num">—</span>
+            <span class="unit">${tag.unit}</span>
+          </div>
+          <div class="gauge-htrack">
+            <div class="gauge-hfill"></div>
+            <div class="gauge-hmark sp" hidden></div>
+            <div class="gauge-hmark hi" hidden></div>
+          </div>
+        </div>
+      `;
+    }
+    container.appendChild(card);
+  }
+}
+
+function updateGauges(state: SimState): void {
+  for (const g of GAUGES) {
+    const card = document.getElementById(`gauge-${g.tagId}`);
+    if (!card) continue;
+    const tag = TAG_BY_ID[g.tagId];
+    const val = state.values[g.tagId];
+    const pct = pct01(val, tag.min, tag.max);
+    const sp = getGaugeSp(state, g);
+    const spPct = sp !== null ? pct01(sp, tag.min, tag.max) : null;
+    const hiPct = tag.hi !== undefined ? pct01(tag.hi, tag.min, tag.max) : null;
+
+    const isAlarm = tag.hi !== undefined && val > tag.hi;
+    const isWarn = !isAlarm && isGaugeWarn(g.tagId, val);
+    card.classList.toggle("gauge-alarm", isAlarm);
+    card.classList.toggle("gauge-warn", isWarn);
+
+    if (g.layout === "vertical") {
+      const fill = card.querySelector<HTMLElement>(".gauge-vfill");
+      const num = card.querySelector<HTMLElement>(".gauge-value-big .num");
+      const pctEl = card.querySelector<HTMLElement>(".gauge-pct");
+      if (fill) fill.style.height = `${pct * 100}%`;
+      if (num) num.textContent = formatVal(val);
+      if (pctEl) pctEl.textContent = `${Math.round(pct * 100)}% cheio`;
+
+      const spMark = card.querySelector<HTMLElement>(".gauge-vmark.sp");
+      const hiMark = card.querySelector<HTMLElement>(".gauge-vmark.hi");
+      if (spMark && spPct !== null) {
+        spMark.hidden = false;
+        spMark.style.bottom = `${spPct * 100}%`;
+      } else if (spMark) spMark.hidden = true;
+      if (hiMark && hiPct !== null) {
+        hiMark.hidden = false;
+        hiMark.style.bottom = `${hiPct * 100}%`;
+      } else if (hiMark) hiMark.hidden = true;
+    } else {
+      const fill = card.querySelector<HTMLElement>(".gauge-hfill");
+      const num = card.querySelector<HTMLElement>(".gauge-hvalue .num");
+      if (fill) fill.style.width = `${pct * 100}%`;
+      if (num) num.textContent = formatVal(val);
+
+      const spMark = card.querySelector<HTMLElement>(".gauge-hmark.sp");
+      const hiMark = card.querySelector<HTMLElement>(".gauge-hmark.hi");
+      if (spMark && spPct !== null) {
+        spMark.hidden = false;
+        spMark.style.left = `${spPct * 100}%`;
+      } else if (spMark) spMark.hidden = true;
+      if (hiMark && hiPct !== null) {
+        hiMark.hidden = false;
+        hiMark.style.left = `${hiPct * 100}%`;
+      } else if (hiMark) hiMark.hidden = true;
+    }
   }
 }
 

@@ -39,6 +39,39 @@ export type FaultId =
   | "CONE_JAM"        // britador cônico travado → eleva corrente no CONE
   | "SILO_LOW";       // falha de alimentação → silo drena
 
+// ----------- Ações de mitigação (operador atua via HMI) ----------- //
+export type MitigationActionId =
+  | "M_LUBE"           // lubrificação e troca de mancal do JAW
+  | "M_SOFT_RESTART"   // soft restart do motor do JAW
+  | "M_SCREEN_CLEAN"   // limpeza das telas da peneira
+  | "M_TRAMP_RELEASE"  // tramp release hidráulico do cone
+  | "M_REFILL";        // solicitar carregamento do silo
+
+/** Definição estática de uma ação de mitigação (catálogo). */
+export interface MitigationDef {
+  id: MitigationActionId;
+  /** Falha que esta ação resolve. */
+  faultId: FaultId;
+  /** Equipamento alvo (para etiqueta visual). */
+  equipment: EquipmentId;
+  /** Nome curto exibido no botão. */
+  label: string;
+  /** Descrição detalhada (mostrada em tooltip / drawer). */
+  description: string;
+  /** Duração da ação em segundos da simulação. */
+  durationS: number;
+}
+
+/** Instância em andamento de uma mitigação. */
+export interface RunningMitigation {
+  id: MitigationActionId;
+  faultId: FaultId;
+  /** Tempo da simulação (s) em que a ação foi iniciada. */
+  startedAt: number;
+  /** Duração total prevista (s) — cópia da MitigationDef. */
+  durationS: number;
+}
+
 export type TagKind = "PV" | "MV";
 export type EquipmentState = "RUN" | "STOP" | "ALARM";
 
@@ -139,4 +172,6 @@ export interface SimState {
   screenEff: number;
   /** Falhas ativas injetadas pelo operador (para teste). */
   faults: Record<FaultId, boolean>;
+  /** Ações de mitigação em andamento (operador executando). */
+  runningMitigations: RunningMitigation[];
 }

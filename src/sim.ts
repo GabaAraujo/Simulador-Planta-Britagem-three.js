@@ -18,15 +18,16 @@
  */
 
 import type {
-  SimState,
-  EquipmentId,
-  EquipmentState,
-  TagId,
-  Alarm,
-  ControlLoop,
-  FaultId,
+ SimState,
+ EquipmentId,
+ EquipmentState,
+ TagId,
+ Alarm,
+ ControlLoop,
+ FaultId,
+ MitigationActionId,
 } from "./types";
-import { TAGS, LOOPS, SETPOINTS, SIM } from "./config";
+import { TAGS, LOOPS, SETPOINTS, SIM, MITIGATION_BY_ID } from "./config";
 
 // ------------------------------------------------------------------ //
 // Estado inicial
@@ -62,14 +63,15 @@ export function createInitialState(): SimState {
     alarms: [],
     loops: loops as SimState["loops"],
     screenEff: SIM.EFF_BASE,
-    faults: {
-      JAW_BEARING: false,
-      JAW_OVERLOAD: false,
-      SCREEN_BLIND: false,
-      CONE_JAM: false,
-      SILO_LOW: false,
-    },
-  };
+   faults: {
+   JAW_BEARING: false,
+   JAW_OVERLOAD: false,
+   SCREEN_BLIND: false,
+   CONE_JAM: false,
+   SILO_LOW: false,
+   },
+   runningMitigations: [],
+ };
 }
 
 // ------------------------------------------------------------------ //
@@ -110,28 +112,45 @@ function piStep(loop: ControlLoop, pv: number, dt: number): number {
 // Reset
 // ------------------------------------------------------------------ //
 export function resetSim(s: SimState): void {
-  const fresh = createInitialState();
-  s.t = 0;
-  s.values = fresh.values;
-  s.equipState = fresh.equipState;
-  s.alarms = [];
-  s.loops = fresh.loops;
-  s.screenEff = fresh.screenEff;
-  s.eStop = false;
-  s.faults = fresh.faults;
-  // mantém running, oversizeReturn, showLabels conforme estavam
+ const fresh = createInitialState();
+ s.t = 0;
+ s.values = fresh.values;
+ s.equipState = fresh.equipState;
+ s.alarms = [];
+ s.loops = fresh.loops;
+ s.screenEff = fresh.screenEff;
+ s.eStop = false;
+ s.faults = fresh.faults;
+ s.runningMitigations = [];
+ // mantém running, oversizeReturn, showLabels conforme estavam
 }
 
 // ------------------------------------------------------------------ //
 // Tick principal
 // ------------------------------------------------------------------ //
 export function stepSim(s: SimState, dt: number): void {
-  if (!s.running || s.eStop) {
-    // Mesmo parado, deixar o nível drenar lentamente seria estranho — mantemos congelado.
-    return;
-  }
-  s.t += dt;
-  const v = s.values;
+ if (!s.running || s.eStop) {
+ // Mesmo parado, deixar o nível drenar lentamente seria estranho — mantemos congelado.
+ return;
+ }
+ s.t += dt;
+ const v = s.values;
+
+ // ----------- Processar ações de mitigação em andamento ----------- //
+ // Quando o tempo decorrido >= durationS, a falha alvo é resolvida (limpada)
+ // e a mitigação é removida da lista de "em andamento".
+ if (s.runningMitigations.length > 0) {
+ const stillRunning = [];
+ for (const m of s.runningMitigations) {
+ const elapsed = s.t - m.startedAt;
+ if (elapsed >= m.durationS) {
+ s.faults[m.faultId] = false; // ação concluída → falha resolvida
+ } else {
+ stillRunning.push(m);
+ }
+ }
+ s.runningMitigations = stillRunning;
+ }
 
   // ----------- Controladores ----------- //
   // LIC-101 (manter nível). Se nível alto → aumenta descarga (FV).
@@ -170,10 +189,16 @@ export function stepSim(s: SimState, dt: number): void {
   const siloFactor = clamp(v["LT-101"] / 0.5, 0, 1); // silo vazio → vazão cai
   const feedTph = v["FV-102"] * SIM.FEED_PER_HZ * siloFactor + noiseFlow * siloFactor;
 
-  // Balanço do silo: enchimento "contínuo" suposto (ex.: caminhão / alimentação externa)
-  // Para deixar o setpoint atingível, fornecemos refill proporcional ao consumo médio.
-  // Falha SILO_LOW: corta totalmente a reposição (silo drena).
-  const refillRate = s.faults.SILO_LOW ? 0 : 0.05;
+  // Balanço do silo (reposição externa via caminhão / correia de alimentação).
+  // A reposição é dimensionada para acompanhar o consumo NOMINAL (FIC-105 SP),
+  // com 10% de folga, permitindo que o LIC-101 module a descarga e o nível
+  // estabilize próximo ao setpoint. Quando o nível está abaixo do alvo, um
+  // "boost" representa o sistema de carregamento operando no máximo.
+  // Falha SILO_LOW: corta totalmente a reposição (silo drena até 0).
+  const targetLevel = s.loops["LIC-101"].setpoint ?? 6;
+  const baseRefill = (s.loops["FIC-105"].setpoint ?? SETPOINTS.WT_PROD) / 800;
+  const levelDeficit = clamp((targetLevel - v["LT-101"]) / Math.max(0.1, targetLevel), 0, 1);
+  const refillRate = s.faults.SILO_LOW ? 0 : baseRefill * (1.1 + levelDeficit * 0.4);
   const drainRate = feedTph / 800; // converte t/h em m/s de queda no nível (escala fictícia)
   v["LT-101"] = clamp(v["LT-101"] + (refillRate - drainRate) * dt, 0, SIM.SILO_CAPACITY_M);
 
@@ -356,12 +381,66 @@ export function clearEStop(s: SimState): void {
 // Injeção de falhas (apenas para teste do SCADA)
 // ------------------------------------------------------------------ //
 export function toggleFault(s: SimState, id: FaultId): boolean {
-  s.faults[id] = !s.faults[id];
-  return s.faults[id];
+ s.faults[id] = !s.faults[id];
+ // Se o operador desligou a falha manualmente, também cancela qualquer mitigação
+ // em andamento que estivesse tratando essa falha (não faz sentido continuar).
+ if (!s.faults[id]) {
+ s.runningMitigations = s.runningMitigations.filter((m) => m.faultId !== id);
+ }
+ return s.faults[id];
 }
 export function setFault(s: SimState, id: FaultId, active: boolean): void {
-  s.faults[id] = active;
+ s.faults[id] = active;
+ if (!active) {
+ s.runningMitigations = s.runningMitigations.filter((m) => m.faultId !== id);
+ }
 }
 export function clearAllFaults(s: SimState): void {
-  for (const k of Object.keys(s.faults) as FaultId[]) s.faults[k] = false;
+ for (const k of Object.keys(s.faults) as FaultId[]) s.faults[k] = false;
+ s.runningMitigations = [];
+}
+
+// ------------------------------------------------------------------ //
+// Ações de mitigação (operador atua via HMI para corrigir falhas)
+// ------------------------------------------------------------------ //
+
+/**
+ * Inicia uma ação de mitigação. Retorna `true` se a ação foi iniciada
+ * com sucesso, `false` se rejeitada (planta parada, falha inativa, ação
+ * já em andamento, etc.).
+ *
+ * Pré-condições verificadas:
+ *  - Simulação rodando e sem E-Stop
+ *  - Mitigação não está já em execução
+ *  - A falha alvo está ativa (não faz sentido mitigar o que não está com problema)
+ */
+export function startMitigation(s: SimState, id: MitigationActionId): boolean {
+ if (!s.running || s.eStop) return false;
+ const def = MITIGATION_BY_ID[id];
+ if (!def) return false;
+ if (!s.faults[def.faultId]) return false; // falha não está ativa
+ if (s.runningMitigations.some((m) => m.id === id)) return false; // já rodando
+ s.runningMitigations.push({
+ id,
+ faultId: def.faultId,
+ startedAt: s.t,
+ durationS: def.durationS,
+ });
+ return true;
+}
+
+/** Cancela uma mitigação em andamento (operador abortou). */
+export function cancelMitigation(s: SimState, id: MitigationActionId): void {
+ s.runningMitigations = s.runningMitigations.filter((m) => m.id !== id);
+}
+
+/** Retorna o progresso (0..1) de uma mitigação em andamento; `null` se não está rodando. */
+export function getMitigationProgress(
+ s: SimState,
+ id: MitigationActionId,
+): number | null {
+ const m = s.runningMitigations.find((x) => x.id === id);
+ if (!m) return null;
+ const p = (s.t - m.startedAt) / m.durationS;
+ return Math.min(1, Math.max(0, p));
 }

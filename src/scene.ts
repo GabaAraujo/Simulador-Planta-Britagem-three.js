@@ -16,8 +16,10 @@ export interface SceneCtx {
 
 export function createScene(container: HTMLElement): SceneCtx {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0e141d);
-  scene.fog = new THREE.Fog(0x0e141d, 80, 220);
+  // Fundo claro — melhor contraste para apresentação / captura de tela
+  const sky = 0xf5f7fa;
+  scene.background = new THREE.Color(sky);
+  scene.fog = new THREE.Fog(sky, 120, 280);
 
   // Camera
   const camera = new THREE.PerspectiveCamera(
@@ -48,10 +50,10 @@ export function createScene(container: HTMLElement): SceneCtx {
   controls.maxPolarAngle = Math.PI * 0.49; // não atravessar o chão
 
   // ----------- Luzes ----------- //
-  const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+  const ambient = new THREE.AmbientLight(0xffffff, 0.72);
   scene.add(ambient);
 
-  const sun = new THREE.DirectionalLight(0xffffff, 0.95);
+  const sun = new THREE.DirectionalLight(0xffffff, 1.05);
   sun.position.set(40, 60, 30);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -64,26 +66,26 @@ export function createScene(container: HTMLElement): SceneCtx {
   sun.shadow.bias = -0.0005;
   scene.add(sun);
 
-  // Luz de preenchimento azulada
-  const fill = new THREE.HemisphereLight(0x8fb3ff, 0x1a1f2a, 0.35);
+  // Preenchimento suave (céu claro + chão cinza)
+  const fill = new THREE.HemisphereLight(0xffffff, 0xd8dde6, 0.45);
   scene.add(fill);
 
   // ----------- Chão ----------- //
   const groundGeo = new THREE.PlaneGeometry(300, 200);
   const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x1a2230,
-    roughness: 0.95,
-    metalness: 0.05,
+    color: 0xe4e8ee,
+    roughness: 0.92,
+    metalness: 0.02,
   });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
   scene.add(ground);
 
-  // Grid
-  const grid = new THREE.GridHelper(200, 80, 0x2a3a52, 0x1e2a3a);
+  // Grid (linhas escuras sobre fundo claro)
+  const grid = new THREE.GridHelper(200, 80, 0x9aa8b8, 0xc8d0dc);
   (grid.material as THREE.Material).transparent = true;
-  (grid.material as THREE.Material).opacity = 0.55;
+  (grid.material as THREE.Material).opacity = 0.75;
   scene.add(grid);
 
   // Eixo helper discreto (apenas como referência)

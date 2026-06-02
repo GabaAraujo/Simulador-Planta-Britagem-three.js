@@ -4,13 +4,15 @@
  */
 
 import type {
-  EquipmentDef,
-  EquipmentId,
-  Tag,
-  TagId,
-  ControlLoop,
-  LoopId,
-  FaultId,
+ EquipmentDef,
+ EquipmentId,
+ Tag,
+ TagId,
+ ControlLoop,
+ LoopId,
+ FaultId,
+ MitigationDef,
+ MitigationActionId,
 } from "./types";
 
 // ----------- Equipamentos (layout linear) ----------- //
@@ -209,6 +211,58 @@ export const FAULTS: FaultDef[] = [
     description: "Reposição zerada; nível e vazão caem.",
   },
 ];
+
+// ----------- Catálogo de ações de mitigação (operador atua via HMI) ----------- //
+// Cada ação resolve uma falha específica após `durationS` segundos de execução.
+// Modela o tempo real que o operador / equipe de campo leva para corrigir o problema.
+export const MITIGATIONS: MitigationDef[] = [
+ {
+ id: "M_LUBE",
+ faultId: "JAW_BEARING",
+ equipment: "JAW",
+ label: "Lubrificação + Troca de Mancal",
+ description: "Para o britador, executa lubrificação forçada e substitui rolamento desgastado.",
+ durationS: 25,
+ },
+ {
+ id: "M_SOFT_RESTART",
+ faultId: "JAW_OVERLOAD",
+ equipment: "JAW",
+ label: "Soft Restart do Motor",
+ description: "Reduz a alimentação, aguarda a corrente normalizar e religa o britador suavemente.",
+ durationS: 12,
+ },
+ {
+ id: "M_SCREEN_CLEAN",
+ faultId: "SCREEN_BLIND",
+ equipment: "SCREEN",
+ label: "Limpeza por Jatos d'Água",
+ description: "Aciona jatos de alta pressão sobre as telas para remover material entupido (briddging).",
+ durationS: 18,
+ },
+ {
+ id: "M_TRAMP_RELEASE",
+ faultId: "CONE_JAM",
+ equipment: "CONE",
+ label: "Acionar Tramp Release",
+ description: "Sistema hidráulico abre o cone para liberar material não-britável (metal, madeira).",
+ durationS: 8,
+ },
+ {
+ id: "M_REFILL",
+ faultId: "SILO_LOW",
+ equipment: "SILO",
+ label: "Solicitar Carregamento do Silo",
+ description: "Aciona a equipe de campo para abastecer o silo via caminhão ou esteira de alimentação.",
+ durationS: 20,
+ },
+];
+
+export const MITIGATION_BY_ID: Record<MitigationActionId, MitigationDef> =
+ MITIGATIONS.reduce((acc, m) => {
+ acc[m.id] = m;
+ return acc;
+ }, {} as Record<MitigationActionId, MitigationDef>);
 
 // ----------- Parâmetros físicos da simulação ----------- //
 export const SIM = {

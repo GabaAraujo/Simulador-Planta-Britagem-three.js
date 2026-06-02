@@ -9,6 +9,7 @@ import { createInitialState, stepSim } from "./sim";
 import { setupUI } from "./ui";
 import { setupInteractions } from "./interactions";
 import { createCameraManager } from "./cameraManager";
+import { createMitigationVfx } from "./mitigationVfx";
 import type { EquipmentId } from "./types";
 import * as THREE from "three";
 
@@ -21,6 +22,7 @@ if (!container) throw new Error("Container #viewport não encontrado.");
 const scn = createScene(container);
 const plant = buildPlant(scn.scene);
 const state = createInitialState();
+const mitigationVfx = createMitigationVfx(plant.nodes);
 
 // Gerenciador de câmera: 3D (perspectiva) <-> ISO (ortográfica). Dimensiona o
 // frustum ortográfico pelo bounding box real da planta.
@@ -158,6 +160,9 @@ function tick() {
   updateStream(plant.flows.conv, frameDt, convFlow);
   updateStream(plant.flows.undersize, frameDt, undersizeFlow);
   updateStream(plant.flows.oversize, frameDt, overFlowRate);
+
+  // 3b) Efeitos visuais das mitigações (água, carregamento, etc.)
+  mitigationVfx.update(state, state.t, frameDt);
 
   // 4) Interações (hover/click)
   interactions.update();
